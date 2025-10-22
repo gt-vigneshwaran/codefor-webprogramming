@@ -1,0 +1,626 @@
+I'll provide the complete code for this Task Manager application with both backend and frontend.
+
+## Backend Code
+
+### models/taskModel.js
+```javascript
+const mongoose = require('mongoose');
+
+const taskSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true
+  },
+  description: {
+    type: String,
+    required: true
+  }
+}, {
+  timestamps: true
+});
+
+module.exports = mongoose.model('Task', taskSchema);
+```
+
+### controllers/taskController.js
+```javascript
+const Task = require('../models/taskModel');
+
+exports.createTask = async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    
+    if (!name || !description) {
+      return res.status(400).json({ 
+        message: 'Name and description are required' 
+      });
+    }
+
+    const task = await Task.create({ name, description });
+    res.status(201).json(task);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.getTasks = async (req, res) => {
+  try {
+    const tasks = await Task.find();
+    res.status(200).json({ 
+      tasks,
+      count: tasks.length 
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+```
+
+### routers/taskRouter.js
+```javascript
+const express = require('express');
+const router = express.Router();
+const taskController = require('../controllers/taskController');
+
+router.post('/tasks', taskController.createTask);
+router.get('/tasks', taskController.getTasks);
+
+module.exports = router;
+```
+
+### index.js
+```javascript
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const taskRouter = require('./routers/taskRouter');
+
+const app = express();
+const PORT = 8080;
+
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type']
+}));
+
+app.use(express.json());
+
+mongoose.connect('mongodb://localhost:27017/taskdb', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+  .then(() => {
+    console.log('Connected to MongoDB');
+    
+    app.use('/', taskRouter);
+    
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  })
+  .catch(err => {
+    console.error('MongoDB connection error:', err);
+  });
+
+module.exports = app;
+```
+
+## Frontend Code
+
+### src/Components/Home.jsx
+```javascript
+import React from 'react';
+import { Link } from 'react-router-dom';
+import './Home.css';
+
+const Home = () => {
+  return (
+    <div className="home-container">
+      <div className="home-content">
+        <h1>Task Manager</h1>
+        <p>Manage your tasks efficiently</p>
+        <div className="button-group">
+          <Link to="/add-task">
+            <button className="btn btn-primary">Add Task</button>
+          </Link>
+          <Link to="/view-tasks">
+            <button className="btn btn-success">View Tasks</button>
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Home;
+```
+
+### src/Components/Addtask.jsx
+```javascript
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import './Addtask.css';
+
+const AddTask = () => {
+  const navigate = useNavigate();
+  const [formData, setFormData] = useState({
+    name: '',
+    description: ''
+  });
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData({
+      ...formData,
+      [name]: value
+    });
+    setError('');
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (!formData.name || !formData.description) {
+      setError('Please fill in all fields');
+      return;
+    }
+
+    try {
+      const response = await axios.post('http://localhost:8080/tasks', formData);
+      
+      if (response.status === 201) {
+        setSuccess('Task added successfully!');
+        setFormData({ name: '', description: '' });
+        
+        setTimeout(() => {
+          navigate('/view-tasks');
+        }, 1500);
+      }
+    } catch (error) {
+      setError('Failed to add task. Please try again.');
+    }
+  };
+
+  return (
+    <div className="addtask-container">
+      <div className="addtask-content">
+        <h2>Add New Task</h2>
+        
+        {error && <div className="alert alert-danger">{error}</div>}
+        {success && <div className="alert alert-success">{success}</div>}
+        
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label htmlFor="name">Task Name</label>
+            <input
+              type="text"
+              id="name"
+              name="name"
+              className="form-control"
+              value={formData.name}
+              onChange={handleChange}
+              required
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="description">Task Description</label>
+            <textarea
+              id="description"
+              name="description"
+              className="form-control"
+              rows="4"
+              value={formData.description}
+              onChange={handleChange}
+              required
+            />
+          </div>
+
+          <button type="submit" className="btn btn-primary">Add Task</button>
+        </form>
+
+        <Link to="/" className="back-link">Back to Home</Link>
+      </div>
+    </div>
+  );
+};
+
+export default AddTask;
+```
+
+### src/Components/Viewtask.jsx
+```javascript
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import axios from 'axios';
+import './Viewtask.css';
+
+const ViewTasks = () => {
+  const [tasks, setTasks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const fetchTasks = async () => {
+    setLoading(true);
+    try {
+      const response = await axios.get('http://localhost:8080/tasks');
+      setTasks(response.data.tasks || []);
+      setLoading(false);
+    } catch (error) {
+      setError('Failed to fetch tasks');
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTasks();
+  }, []);
+
+  const handleRefresh = () => {
+    fetchTasks();
+  };
+
+  return (
+    <div className="viewtasks-container">
+      <div className="viewtasks-content">
+        <h2>All Tasks</h2>
+        
+        <div className="actions">
+          <button onClick={handleRefresh} className="btn btn-info">Refresh</button>
+          <Link to="/" className="back-link">Back to Home</Link>
+        </div>
+
+        {loading && <div className="loading">Loading tasks...</div>}
+        
+        {error && <div className="alert alert-danger">{error}</div>}
+
+        {!loading && tasks.length === 0 && (
+          <div className="empty-state">No tasks found</div>
+        )}
+
+        {!loading && tasks.length > 0 && (
+          <table className="table table-striped">
+            <thead>
+              <tr>
+                <th>Task Name</th>
+                <th>Description</th>
+                <th>Created At</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tasks.map((task) => (
+                <tr key={task._id}>
+                  <td>{task.name}</td>
+                  <td>{task.description}</td>
+                  <td>{new Date(task.createdAt).toLocaleDateString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default ViewTasks;
+```
+
+### src/App.js
+```javascript
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Home from './Components/Home';
+import AddTask from './Components/Addtask';
+import ViewTasks from './Components/Viewtask';
+import 'bootstrap/dist/css/bootstrap.min.css';
+import './App.css';
+
+function App() {
+  return (
+    <Router>
+      <div className="App">
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/add-task" element={<AddTask />} />
+          <Route path="/view-tasks" element={<ViewTasks />} />
+        </Routes>
+      </div>
+    </Router>
+  );
+}
+
+export default App;
+```
+
+### CSS Files
+
+### src/Components/Home.css
+```css
+.home-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.home-content {
+  text-align: center;
+  background: white;
+  padding: 50px;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.home-content h1 {
+  font-size: 48px;
+  margin-bottom: 20px;
+  color: #333;
+}
+
+.home-content p {
+  font-size: 18px;
+  color: #666;
+  margin-bottom: 40px;
+}
+
+.button-group {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+}
+
+.button-group button {
+  padding: 15px 40px;
+  font-size: 18px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.button-group .btn-primary {
+  background-color: #007bff;
+  color: white;
+}
+
+.button-group .btn-primary:hover {
+  background-color: #0056b3;
+  transform: translateY(-2px);
+}
+
+.button-group .btn-success {
+  background-color: #28a745;
+  color: white;
+}
+
+.button-group .btn-success:hover {
+  background-color: #218838;
+  transform: translateY(-2px);
+}
+```
+
+### src/Components/Addtask.css
+```css
+.addtask-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
+}
+
+.addtask-content {
+  background: white;
+  padding: 40px;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  max-width: 600px;
+  width: 100%;
+}
+
+.addtask-content h2 {
+  text-align: center;
+  margin-bottom: 30px;
+  color: #333;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+  color: #333;
+}
+
+.form-control {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  font-size: 14px;
+}
+
+.form-control:focus {
+  outline: none;
+  border-color: #007bff;
+}
+
+.btn-primary {
+  width: 100%;
+  padding: 12px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  font-size: 16px;
+  cursor: pointer;
+  margin-top: 20px;
+}
+
+.btn-primary:hover {
+  background-color: #0056b3;
+}
+
+.back-link {
+  display: block;
+  text-align: center;
+  margin-top: 20px;
+  color: #007bff;
+  text-decoration: none;
+}
+
+.back-link:hover {
+  text-decoration: underline;
+}
+
+.alert {
+  padding: 12px;
+  margin-bottom: 20px;
+  border-radius: 5px;
+}
+
+.alert-danger {
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+.alert-success {
+  background-color: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+```
+
+### src/Components/Viewtask.css
+```css
+.viewtasks-container {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 40px 20px;
+}
+
+.viewtasks-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  background: white;
+  padding: 40px;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.viewtasks-content h2 {
+  text-align: center;
+  margin-bottom: 30px;
+  color: #333;
+}
+
+.actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+.btn-info {
+  padding: 10px 20px;
+  background-color: #17a2b8;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.btn-info:hover {
+  background-color: #138496;
+}
+
+.back-link {
+  color: #007bff;
+  text-decoration: none;
+}
+
+.back-link:hover {
+  text-decoration: underline;
+}
+
+.loading {
+  text-align: center;
+  padding: 40px;
+  font-size: 18px;
+  color: #666;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px;
+  font-size: 18px;
+  color: #999;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+.table thead {
+  background-color: #f8f9fa;
+}
+
+.table th,
+.table td {
+  padding: 15px;
+  text-align: left;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.table-striped tbody tr:nth-of-type(odd) {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.alert {
+  padding: 12px;
+  margin-bottom: 20px;
+  border-radius: 5px;
+}
+
+.alert-danger {
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+```
+
+### src/App.css
+```css
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.App {
+  min-height: 100vh;
+}
+```
+
+This complete implementation should pass all the test cases!
